@@ -1,0 +1,43 @@
+[package]
+name = "zvideoconverter"
+description = "Free, open-source bulk video converter with NVIDIA, AMD and Intel GPU acceleration, editable profiles and file names that stay intact"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[[bin]]
+name = "zvideoconverter"
+path = "src/main.rs"
+
+[lib]
+name = "zvc_lib"
+# Desktop only: the cdylib/staticlib kinds are for Tauri mobile and break MinGW links.
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+zvc-core = { path = "../crates/zvc-core" }
+
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2"
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+notify = "8"
+ureq = { version = "2", features = ["json"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Categories={{categories}}
+{{#if comment}}Comment={{comment}}{{/if}}
+Exec={{exec}} %F
+Icon={{icon}}
+Name={{name}}
+Terminal=false
+Type=Application
+MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;video/x-flv;video/x-ms-wmv;
+StartupWMClass={{exec}}
+Keywords=video;converter;convert;bulk;batch;ffmpeg;gpu;nvenc;amf;vaapi;hevc;h264;av1;mp4;mkv;transcode;

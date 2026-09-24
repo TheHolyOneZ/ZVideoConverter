@@ -1,0 +1,34 @@
+[package]
+name = "zvc-core"
+description = "Conversion engine behind ZVideoConverter: ffprobe media info, editable profiles, safe output naming, GPU encoder detection (NVENC, AMF, VA-API, QSV) and a parallel ffmpeg job queue"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+base64 = "0.22"
+filetime = "0.2"
+trash = "5"
+fs4 = "0.13"
+ureq = "2"
+# Only used on Windows at runtime, but compiled everywhere so its code is tested on Linux too.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+filetime = "0.2"
