@@ -5,6 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import clsx from "clsx";
 import {
+  ChevronRight,
   Clapperboard,
   Copy,
   Download,
@@ -158,9 +159,9 @@ export function ProfileRail() {
 
       <div className="flex-1 overflow-y-auto px-2 pb-3">
         {favourites.length > 0 && (
-          <Group label={t("profiles.favourites")}>{favourites.map((p) => row(p))}</Group>
+          <Group id="favourites" count={favourites.length} open={!!q} label={t("profiles.favourites")}>{favourites.map((p) => row(p))}</Group>
         )}
-        <Group label={t("profiles.mine")}>
+        <Group id="mine" count={custom.length} open={!!q} label={t("profiles.mine")}>
           {custom.length === 0 ? (
             <div className="text-[11.5px] px-2.5 py-2 leading-relaxed" style={{ color: "var(--text-3)" }}>
               {q ? t("profiles.noMatch") : t("profiles.mineEmpty")}
@@ -173,17 +174,33 @@ export function ProfileRail() {
             </DndContext>
           )}
         </Group>
-        <Group label={t("profiles.builtin")}>{builtins.map((p) => row(p))}</Group>
+        <Group id="builtin" count={builtins.length} open={!!q} label={t("profiles.builtin")}>{builtins.map((p) => row(p))}</Group>
       </div>
     </aside>
   );
 }
 
-function Group({ label, children }: { label: string; children: React.ReactNode }) {
+function Group({ id, label, count, open, children }: { id: string; label: string; count: number; open?: boolean; children: React.ReactNode }) {
+  const collapsed = useSettingsStore((s) => s.collapsedGroups.includes(id));
+  const shut = collapsed && !open;
+  const toggle = () => {
+    const cur = useSettingsStore.getState().collapsedGroups;
+    useSettingsStore.getState().set({ collapsedGroups: cur.includes(id) ? cur.filter((g) => g !== id) : [...cur, id] });
+  };
   return (
     <div className="mt-2">
-      <div className="label-quiet px-2 pt-2 pb-1.5">{label}</div>
-      <div className="flex flex-col gap-0.5">{children}</div>
+      <button
+        type="button"
+        className="label-quiet w-full flex items-center gap-1 px-1.5 pt-2 pb-1.5 text-left"
+        style={{ background: "none", border: "none", cursor: "pointer" }}
+        aria-expanded={!shut}
+        onClick={toggle}
+      >
+        <ChevronRight size={12} style={{ transform: shut ? undefined : "rotate(90deg)", transition: "transform .15s" }} />
+        <span className="flex-1">{label}</span>
+        <span className="mono tnum" style={{ opacity: 0.7 }}>{count}</span>
+      </button>
+      {!shut && <div className="flex flex-col gap-0.5">{children}</div>}
     </div>
   );
 }

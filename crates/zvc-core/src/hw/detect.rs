@@ -34,6 +34,8 @@ pub struct EncoderStatus {
     pub codec: VideoCodec,
     pub working: bool,
     pub error: Option<String>,
+    #[serde(default)]
+    pub ceiling: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -49,6 +51,10 @@ pub struct HwInfo {
 }
 
 impl HwInfo {
+    pub fn ceiling_ok(&self, encoder: &str) -> bool {
+        self.cpu_encoders.iter().any(|c| c == encoder) || self.encoders.iter().any(|e| e.name == encoder && e.working && e.ceiling)
+    }
+
     pub fn works(&self, encoder: &str) -> bool {
         self.encoders.iter().any(|e| e.name == encoder && e.working)
             || self.cpu_encoders.iter().any(|c| c == encoder)
@@ -218,6 +224,15 @@ fn test_args(name: &str, family: Family, vaapi: Option<&str>) -> Option<Vec<Stri
     Some(a)
 }
 
+fn ceiling_test_args(name: &str, vaapi: Option<&str>) -> Option<Vec<String>> {
+    let mut a = test_args(name, Family::Vaapi, vaapi)?;
+    let at = a.len() - 3;
+    let wide = name.starts_with("av1") || name.starts_with("vp9");
+    let q = if wide { "120" } else { "25" };
+    a.splice(at..at, ["-rc_mode", "QVBR", "-global_quality", q, "-b:v", "2000k", "-maxrate", "2000k"].iter().map(|s| s.to_string()));
+    Some(a)
+}
+
 fn run_listing(ffmpeg: &Path, flag: &str) -> String {
     let mut cmd = command(ffmpeg);
     cmd.args(["-hide_banner", flag]);
@@ -258,7 +273,18 @@ pub fn detect(ffmpeg: &Path, ffmpeg_version: &str) -> HwInfo {
                         }
                     }
                 };
-                EncoderStatus { name, family, codec, working: result.is_ok(), error: result.err() }
+                let working = result.is_ok();
+                let ceiling = working
+                    && match family {
+                        Family::Vaapi => ceiling_test_args(&name, vaapi.as_deref()).is_some_and(|args| {
+                            let mut cmd = command(&ffmpeg);
+                            cmd.args(args);
+                            matches!(run_with_timeout(cmd, Duration::from_secs(20)), Ok(o) if o.status_ok)
+                        }),
+                        Family::Amf => false,
+                        _ => true,
+                    };
+                EncoderStatus { name, family, codec, working, error: result.err(), ceiling }
             })
         })
         .collect();

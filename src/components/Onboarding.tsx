@@ -45,7 +45,10 @@ export const useTour = create<TourState>((set, get) => ({
   active: false,
   samples: [],
   showWelcome: () => set({ welcome: true }),
-  start: () => set({ welcome: false, active: true }),
+  start: () => {
+    useSettingsStore.getState().set({ inspectorCollapsed: false });
+    set({ welcome: false, active: true });
+  },
   end: () => {
     set({ welcome: false, active: false });
     useSettingsStore.getState().set({ onboarded: true });

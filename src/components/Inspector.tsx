@@ -19,6 +19,7 @@ import {
   Search,
   Undo2,
   X,
+  PanelRight,
 } from "./icons";
 import { useT } from "../lib/i18n";
 import { api, errorOf, type AudioCodec, type Container, type Crop, type EncoderPref, type Fit, type Profile, type RateControl, type Resolution, type VideoCodec } from "../lib/tauri";
@@ -77,6 +78,11 @@ export function Inspector() {
   const updateProfile = useProfileStore((s) => s.update);
   const duplicate = useProfileStore((s) => s.duplicate);
   const defaultId = useSettingsStore((s) => s.defaultProfileId);
+  const collapsed = useSettingsStore((s) => s.inspectorCollapsed);
+  const setSettings = useSettingsStore((s) => s.set);
+  useEffect(() => {
+    if (editingId && useSettingsStore.getState().inspectorCollapsed) setSettings({ inspectorCollapsed: false });
+  }, [editingId, setSettings]);
   const jobs = useQueueStore((s) => s.jobs);
   const selectedIds = useQueueStore((s) => s.selected);
   const { editOverride, resetOverride } = useQueueStore();
@@ -97,9 +103,40 @@ export function Inspector() {
   }, [mode, selectedJobs.length, tab]);
 
   if (!profile) return <aside className="pane" />;
+  if (collapsed) {
+    return (
+      <aside className="pane flex flex-col items-center min-h-0 py-2" data-tour="settings">
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm btn-icon"
+          title={t("inspector.expand")}
+          aria-label={t("inspector.expand")}
+          onClick={() => setSettings({ inspectorCollapsed: false })}
+        >
+          <PanelRight size={14} />
+        </button>
+        <button
+          type="button"
+          className="mt-3 flex-1 w-full flex justify-center"
+          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)", padding: 0 }}
+          onClick={() => setSettings({ inspectorCollapsed: false })}
+        >
+          <span className="label" style={{ writingMode: "vertical-rl", display: "inline-block" }}>{t("inspector.head")}</span>
+        </button>
+      </aside>
+    );
+  }
 
   const locked = mode === "files" && selectedJobs.some((j) => ACTIVE.includes(j.status));
-  const readOnly = (mode === "profile" && profile.builtin) || locked;
+  const inUse =
+    mode === "profile"
+      ? jobs.filter(
+          (j) =>
+            (ACTIVE.includes(j.status) && !j.override && j.profileId === profile.id) ||
+            j.extras.some((x) => x.profileId === profile.id && x.status && ACTIVE.includes(x.status)),
+        ).length
+      : 0;
+  const readOnly = (mode === "profile" && (profile.builtin || inUse > 0)) || locked;
   const edit = (fn: (p: Profile) => void) => {
     if (readOnly) return;
     if (mode === "profile") updateProfile(profile.id, fn);
@@ -128,6 +165,15 @@ export function Inspector() {
     <aside className="pane flex flex-col min-h-0 overflow-hidden" data-tour="settings">
       <div className="pane-head">
         <span className="label flex-1">{t("inspector.head")}</span>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm btn-icon order-last"
+          title={t("inspector.collapse")}
+          aria-label={t("inspector.collapse")}
+          onClick={() => setSettings({ inspectorCollapsed: true })}
+        >
+          <PanelRight size={14} />
+        </button>
         {selectedJobs.length > 0 && !editingId && (
           <Seg
             value={mode}
@@ -161,10 +207,10 @@ export function Inspector() {
             <div className="text-[12px] mt-1 leading-snug" style={{ color: "var(--text-3)" }}>
               {profileDescription(profile) || t("inspector.noDescription")}
             </div>
-            {profile.builtin ? (
+            {profile.builtin || inUse > 0 ? (
               <div className="flex items-center gap-2 mt-2.5 p-2 pl-2.5 rounded-[5px] text-[12px]" style={{ background: "var(--hover)", color: "var(--text-2)" }}>
                 <Lock size={13} className="shrink-0" />
-                <span className="flex-1 leading-snug">{t("inspector.builtinReadOnly")}</span>
+                <span className="flex-1 leading-snug">{profile.builtin ? t("inspector.builtinReadOnly") : t("inspector.profileInUse", { count: inUse })}</span>
                 <button className="btn btn-outline-accent btn-sm" onClick={() => duplicate(profile.id)}>
                   <Copy size={12} />
                   {t("profiles.duplicateToEdit")}
@@ -239,6 +285,7 @@ export function Inspector() {
           {tab === "output" && <OutputTab p={profile} edit={edit} />}
           {tab === "file" && selectedJobs.length === 1 && <FileTab job={selectedJobs[0]} />}
         </fieldset>
+        {tab !== "file" && <CommandPreview jobs={mode === "files" ? selectedJobs : jobs.filter((j) => !j.override && j.profileId === profile.id)} />}
       </div>
     </aside>
   );
@@ -353,6 +400,7 @@ function VideoTab({ p, edit }: { p: Profile; edit: Edit }) {
     }
     return { h264: "libx264", hevc: "libx265", av1: hw.cpuEncoders.includes("libsvtav1") ? "libsvtav1" : "libaom-av1", vp9: "libvpx-vp9", mpeg4: "mpeg4", prores: "prores_ks", gif: "gif" }[codec];
   })();
+  const ceilingOk = !resolved || !hw || hw.cpuEncoders.includes(resolved) || !!hw.encoders.find((e) => e.name === resolved && e.working && e.ceiling);
 
   return (
     <>
@@ -452,7 +500,7 @@ function VideoTab({ p, edit }: { p: Profile; edit: Edit }) {
                   />
                 </div>
                 {p.video.rate.kind === "quality" && <QualitySlider value={p.video.rate.value} onChange={(v) => edit((x) => void (x.video.rate = { kind: "quality", value: v }))} />}
-                {p.video.rate.kind === "cq" && <CqControl rate={p.video.rate} onChange={(r) => edit((x) => void (x.video.rate = r))} />}
+                {p.video.rate.kind === "cq" && <CqControl rate={p.video.rate} ceilingOk={ceilingOk} encoder={resolved ?? ""} onChange={(r) => edit((x) => void (x.video.rate = r))} />}
                 {p.video.rate.kind === "bitrate" && (
                   <>
                     <div className="mt-2.5">
@@ -670,7 +718,7 @@ function cqBand(v: number) {
   return "cq.small";
 }
 
-function CqControl({ rate, onChange }: { rate: Extract<RateControl, { kind: "cq" }>; onChange: (r: RateControl) => void }) {
+function CqControl({ rate, ceilingOk, encoder, onChange }: { rate: Extract<RateControl, { kind: "cq" }>; ceilingOk: boolean; encoder: string; onChange: (r: RateControl) => void }) {
   const t = useT();
   const capped = rate.maxKbps != null;
   const band = [
@@ -695,10 +743,10 @@ function CqControl({ rate, onChange }: { rate: Extract<RateControl, { kind: "cq"
           {t("rate.cqHint")}
         </div>
       </div>
-      <Row label={t("rate.ceiling")} hint={t("rate.ceilingHint")}>
-        <Switch on={capped} onChange={(on) => onChange({ ...rate, maxKbps: on ? 8000 : null })} />
+      <Row label={t("rate.ceiling")} hint={ceilingOk ? t("rate.ceilingHint") : t("rate.ceilingNo", { name: encoder })}>
+        <Switch on={capped && ceilingOk} disabled={!ceilingOk} onChange={(on) => onChange({ ...rate, maxKbps: on ? 8000 : null })} />
       </Row>
-      {capped && (
+      {capped && ceilingOk && (
         <Row label={t("rate.maxBitrate")}>
           <NumberField value={rate.maxKbps ?? 8000} min={100} max={500000} suffix="kb/s" width={120} onChange={(v) => onChange({ ...rate, maxKbps: v ?? 8000 })} />
         </Row>
@@ -1287,6 +1335,27 @@ function CropDetect({ job }: { job: Job }) {
         </button>
       </div>
     </Section>
+  );
+}
+
+function CommandPreview({ jobs }: { jobs: Job[] }) {
+  const t = useT();
+  const job = jobs.find((j) => j.preview?.command);
+  return (
+    <div className="mt-4 pt-1" style={{ borderTop: "1px solid var(--line)" }}>
+      <Disclosure label={t("inspector.command")}>
+        {job?.preview?.command ? (
+          <>
+            <div className="text-[11px] mt-1 truncate" style={{ color: "var(--text-3)" }} title={job.name}>
+              {jobs.length > 1 ? t("inspector.commandFor", { name: job.name }) : job.name}
+            </div>
+            <CommandBox text={job.preview.command} />
+          </>
+        ) : (
+          <div className="text-[12px] mt-1 leading-snug" style={{ color: "var(--text-3)" }}>{t("inspector.commandNone")}</div>
+        )}
+      </Disclosure>
+    </div>
   );
 }
 

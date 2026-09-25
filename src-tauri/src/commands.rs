@@ -107,8 +107,12 @@ pub fn ffmpeg_download_cancel(state: State<'_, AppState>) {
     state.download_cancel.store(true, Ordering::SeqCst);
 }
 
+const HW_CACHE_SCHEMA: u32 = 2;
+
 #[derive(Serialize, Deserialize)]
 struct HwCache {
+    #[serde(default)]
+    schema: u32,
     ffmpeg: PathBuf,
     version: String,
     info: HwInfo,
@@ -127,7 +131,7 @@ pub async fn hw_info(state: State<'_, AppState>, force: bool) -> Res<HwInfo> {
         if !force {
             if let Ok(bytes) = fs::read(&cache_file) {
                 if let Ok(c) = serde_json::from_slice::<HwCache>(&bytes) {
-                    if c.ffmpeg == ff.ffmpeg && c.version == ff.version {
+                    if c.schema == HW_CACHE_SCHEMA && c.ffmpeg == ff.ffmpeg && c.version == ff.version {
                         return Ok(c.info);
                     }
                 }
@@ -137,7 +141,7 @@ pub async fn hw_info(state: State<'_, AppState>, force: bool) -> Res<HwInfo> {
         if let Some(dir) = cache_file.parent() {
             let _ = fs::create_dir_all(dir);
         }
-        let cache = HwCache { ffmpeg: ff.ffmpeg.clone(), version: ff.version.clone(), info: info.clone() };
+        let cache = HwCache { schema: HW_CACHE_SCHEMA, ffmpeg: ff.ffmpeg.clone(), version: ff.version.clone(), info: info.clone() };
         let _ = fs::write(&cache_file, serde_json::to_vec_pretty(&cache).unwrap_or_default());
         Ok(info)
     })
@@ -374,7 +378,7 @@ fn plan_jobs(state: &AppState, jobs: &[JobInput], naming_opts: &NamingOptions, h
     jobs.iter()
         .zip(names)
         .map(|(j, name)| {
-            let estimate = args::estimate_size(&j.profile, &j.media, &j.options);
+            let estimate = args::estimate_size(&j.profile, &j.media, &j.options, hw.as_ref());
             let tmp = temp_path(&name.output);
             let passlog = state.paths.passlogs.join(&j.id);
             let mut preview = JobPreview {

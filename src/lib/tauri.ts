@@ -151,6 +151,7 @@ export interface EncoderStatus {
   codec: VideoCodec;
   working: boolean;
   error: string | null;
+  ceiling: boolean;
 }
 export interface HwInfo {
   ffmpegVersion: string;

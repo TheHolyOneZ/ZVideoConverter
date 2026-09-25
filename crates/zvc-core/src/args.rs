@@ -445,12 +445,11 @@ pub fn build(req: &BuildRequest) -> Result<BuildPlan, BuildError> {
 
             let rate = match &p.video.rate {
                 RateControl::Quality { value } => Rate::Quality(*value),
-                RateControl::Cq { value, max_kbps } => {
-                    if max_kbps.is_some() && enc.family == Family::Amf {
-                        notes.push("ceilingUnsupported");
-                    }
-                    Rate::Cq(*value, *max_kbps)
+                RateControl::Cq { value, max_kbps: Some(_) } if !req.hw.ceiling_ok(&enc.name) => {
+                    notes.push("ceilingUnsupported");
+                    Rate::Cq(*value, None)
                 }
+                RateControl::Cq { value, max_kbps } => Rate::Cq(*value, *max_kbps),
                 RateControl::Bitrate { kbps, cbr: true } => Rate::Cbr(*kbps),
                 RateControl::Bitrate { kbps, cbr: false } => {
                     rate_for_twopass = true;
@@ -656,7 +655,7 @@ fn planned_audio_kbps(p: &Profile, media: &MediaInfo) -> u32 {
     (0..n).map(per).sum()
 }
 
-pub fn estimate_size(p: &Profile, media: &MediaInfo, job: &JobOptions) -> Option<u64> {
+pub fn estimate_size(p: &Profile, media: &MediaInfo, job: &JobOptions, hw: Option<&HwInfo>) -> Option<u64> {
     let dur = duration_window(media, job)?;
     let audio_kbps = if p.container == Container::Gif { 0 } else { planned_audio_kbps(p, media) } as f64;
     let video_kbps = if p.container.is_audio_only() {
@@ -670,41 +669,96 @@ pub fn estimate_size(p: &Profile, media: &MediaInfo, job: &JobOptions) -> Option
             RateControl::Bitrate { kbps, .. } => *kbps as f64,
             RateControl::TargetSize { mib } => return Some(*mib as u64 * 1024 * 1024),
             RateControl::Quality { .. } | RateControl::Cq { .. } => {
-                let (w, h) = if p.container == Container::Gif {
-                    let (w, h) = (v.width as f64, v.height as f64);
-                    let nw = (p.gif.width as f64).min(w);
-                    (nw, h * nw / w.max(1.0))
-                } else {
-                    let (w, h) = output_size(p, v.width, v.height);
-                    (w as f64, h as f64)
-                };
-                let fps = if p.container == Container::Gif { p.gif.fps as f64 } else { p.video.fps.or(v.fps).unwrap_or(30.0) };
-                let codec_factor = match p.video.codec {
-                    _ if p.container == Container::Gif => 12.0,
-                    VideoCodec::H264 | VideoCodec::Mpeg4 => 1.0,
-                    VideoCodec::Hevc | VideoCodec::Vp9 => 0.6,
-                    VideoCodec::Av1 => 0.5,
-                    VideoCodec::Prores => 25.0,
-                    VideoCodec::Gif => 12.0,
-                };
-                let steps = match &p.video.rate {
-                    RateControl::Cq { value, .. } => (22.0 - *value as f64) / 6.0,
-                    RateControl::Quality { value } => (*value as f64 - 70.0) / 15.0,
-                    _ => 0.0,
-                };
-                let bpp = 0.08 * 2f64.powf(steps) * codec_factor;
-                let mut est = w * h * fps * bpp / 1000.0;
+                let mut est = quality_kbps(p, media, v, hw);
                 if let RateControl::Cq { max_kbps: Some(k), .. } = &p.video.rate {
                     est = est.min(*k as f64);
                 }
-                match v.bitrate.or(media.bitrate) {
-                    Some(src) if p.container != Container::Gif => est.min(src as f64 / 1000.0 * 1.1),
-                    _ => est,
-                }
+                est
             }
         }
     };
     Some(((video_kbps + audio_kbps) * 1000.0 / 8.0 * dur) as u64)
+}
+
+fn quality_kbps(p: &Profile, media: &MediaInfo, v: &crate::probe::VideoStream, hw: Option<&HwInfo>) -> f64 {
+    let gif = p.container == Container::Gif;
+    let (w, h) = if gif {
+        let nw = (p.gif.width as f64).min(v.width as f64);
+        (nw, v.height as f64 * nw / (v.width as f64).max(1.0))
+    } else {
+        let (w, h) = output_size(p, v.width, v.height);
+        (w as f64, h as f64)
+    };
+    let src_fps = v.fps.unwrap_or(30.0).max(1.0);
+    let fps = if gif { p.gif.fps as f64 } else { p.video.fps.filter(|f| *f > 0.0).unwrap_or(src_fps) };
+
+    let codec = if gif { VideoCodec::Gif } else { p.video.codec };
+    let encoder = hw.and_then(|hw| encoders::choose(codec, p.video.encoder, hw)).map(|c| c.name);
+    let enc = encoder.as_deref().unwrap_or(match codec {
+        VideoCodec::H264 => "libx264",
+        VideoCodec::Hevc => "libx265",
+        VideoCodec::Av1 => "libsvtav1",
+        VideoCodec::Vp9 => "libvpx-vp9",
+        VideoCodec::Mpeg4 => "mpeg4",
+        VideoCodec::Prores => "prores_ks",
+        VideoCodec::Gif => "gif",
+    });
+    let gpu = !matches!(enc, "libx264" | "libx265" | "libsvtav1" | "libaom-av1" | "libvpx-vp9" | "mpeg4" | "prores_ks" | "gif");
+
+    let cq = match &p.video.rate {
+        RateControl::Cq { value, .. } => *value as f64,
+        RateControl::Quality { value } => {
+            if gpu { encoders::scale(*value, 42, 16) as f64 } else { encoders::scale(*value, 40, 15) as f64 }
+        }
+        _ => 22.0,
+    };
+    let enc_factor = match enc {
+        "libx264" => 1.0,
+        "libx265" => 0.8,
+        "libsvtav1" | "libaom-av1" => 0.7,
+        "libvpx-vp9" => 0.8,
+        "mpeg4" => 1.6,
+        "h264_vaapi" => 1.33,
+        "hevc_vaapi" => 1.72,
+        "av1_vaapi" => 1.1,
+        "vp9_vaapi" => 1.4,
+        "h264_nvenc" => 1.15,
+        "hevc_nvenc" => 0.95,
+        "av1_nvenc" => 0.8,
+        "h264_amf" => 1.35,
+        "hevc_amf" => 1.6,
+        "av1_amf" => 1.2,
+        "h264_qsv" => 1.2,
+        "hevc_qsv" => 1.0,
+        "av1_qsv" => 0.9,
+        _ => 1.0,
+    };
+
+    let pixels = w * h * fps;
+    if matches!(enc, "prores_ks" | "gif") {
+        let bpp = if enc == "gif" { 0.96 } else { 2.0 * 2f64.powf((22.0 - cq) / 12.0) };
+        return pixels * bpp / 1000.0;
+    }
+
+    let src_kbps = v.bitrate.map(|b| b as f64 / 1000.0).or_else(|| media.bitrate.map(|b| b as f64 / 1000.0 * 0.92));
+    let src_codec = match v.codec.as_str() {
+        "h264" => 1.0,
+        "hevc" | "vp9" => 0.72,
+        "av1" => 0.62,
+        "prores" | "dnxhd" | "rawvideo" | "ffv1" | "huffyuv" | "utvideo" => 12.0,
+        _ => 1.6,
+    };
+    let quality = 2f64.powf((22.0 - cq) / 6.0) * enc_factor;
+    match src_kbps.filter(|k| *k > 50.0) {
+        Some(src) => {
+            let h264_eq = src / src_codec;
+            let src_pixels = (v.width as f64 * v.height as f64 * src_fps).max(1.0);
+            let scale = (pixels / src_pixels).powf(0.75);
+            let est = h264_eq * 0.42 * quality * scale;
+            est.min(src * 2.2 * scale.max(1.0))
+        }
+        None => pixels * 0.09 * quality / 1000.0,
+    }
 }
 
 fn even(v: u32) -> u32 {
@@ -778,7 +832,7 @@ mod tests {
         HwInfo {
             encoders: HW_ENCODERS
                 .iter()
-                .map(|(n, f, c)| EncoderStatus { name: n.to_string(), family: *f, codec: *c, working: working.contains(n), error: None })
+                .map(|(n, f, c)| EncoderStatus { name: n.to_string(), family: *f, codec: *c, working: working.contains(n), error: None, ceiling: *f != Family::Amf })
                 .collect(),
             cpu_encoders: ["libx264", "libx265", "libsvtav1", "libvpx-vp9", "gif", "mpeg4", "prores_ks"].iter().map(|s| s.to_string()).collect(),
             vaapi_device: Some("/dev/dri/renderD128".into()),
@@ -1022,11 +1076,35 @@ mod tests {
     fn estimates_are_sane() {
         let m = media();
         let job = JobOptions::default();
-        let h264 = estimate_size(&profile("mp4-h264"), &m, &job).unwrap();
-        let hevc = estimate_size(&profile("mp4-hevc"), &m, &job).unwrap();
-        let share = estimate_size(&profile("share"), &m, &job).unwrap();
+        let h264 = estimate_size(&profile("mp4-h264"), &m, &job, None).unwrap();
+        let hevc = estimate_size(&profile("mp4-hevc"), &m, &job, None).unwrap();
+        let share = estimate_size(&profile("share"), &m, &job, None).unwrap();
         assert!(hevc < h264 && share < h264, "{h264} {hevc} {share}");
         assert!(h264 < 600 * 8_000_000 / 8 * 12 / 10);
+    }
+
+    #[test]
+    fn estimates_match_real_encodes() {
+        let mut m = media();
+        m.duration = Some(40.0);
+        m.audio.clear();
+        m.video = Some(VideoStream { codec: "h264".into(), width: 1280, height: 534, fps: Some(24.0), pix_fmt: "yuv420p".into(), bit_depth: 8, hdr: false, bitrate: Some(4_182_000) });
+        let job = JobOptions::default();
+        let kbps = |codec: VideoCodec, pref: crate::profile::EncoderPref, hw: &HwInfo| {
+            let mut p = profile("mp4-h264");
+            p.audio.mode = StreamMode::Off;
+            p.video.codec = codec;
+            p.video.encoder = pref;
+            p.video.rate = RateControl::Cq { value: 22, max_kbps: None };
+            estimate_size(&p, &m, &job, Some(hw)).unwrap() as f64 * 8.0 / 40.0 / 1000.0
+        };
+        use crate::profile::EncoderPref::{Cpu, Vaapi};
+        let gpu = hw(&["h264_vaapi", "hevc_vaapi"]);
+        let cases = [(kbps(VideoCodec::Hevc, Cpu, &gpu), 2211.0), (kbps(VideoCodec::H264, Vaapi, &gpu), 3225.0), (kbps(VideoCodec::Hevc, Vaapi, &gpu), 4287.0)];
+        for (est, real) in cases {
+            assert!((0.55..=1.8).contains(&(est / real)), "estimated {est:.0} kb/s, real {real} kb/s");
+        }
+        assert!(cases[2].0 > cases[1].0 && cases[1].0 > cases[0].0);
     }
 
     #[test]
@@ -1076,6 +1154,20 @@ mod tests {
         p.video.rate = RateControl::Cq { value: 20, max_kbps: Some(4000) };
         let (_, plan) = run(&p, &media(), &hw(&["h264_amf"]), &JobOptions::default(), false);
         assert!(plan.notes.contains(&"ceilingUnsupported"));
+    }
+
+    #[test]
+    fn vaapi_without_qvbr_keeps_the_gpu() {
+        let mut p = profile("mp4-hevc");
+        p.video.encoder = crate::profile::EncoderPref::Vaapi;
+        p.video.rate = RateControl::Cq { value: 22, max_kbps: Some(6000) };
+        let mut h = hw(&["hevc_vaapi"]);
+        h.encoders.iter_mut().for_each(|e| e.ceiling = false);
+        let (cmd, plan) = run(&p, &media(), &h, &JobOptions::default(), false);
+        assert!(cmd.contains("-c:v hevc_vaapi -rc_mode CQP -qp 22") && !cmd.contains("QVBR"), "{cmd}");
+        assert!(plan.notes.contains(&"ceilingUnsupported"));
+        let (cmd, plan) = run(&p, &media(), &hw(&["hevc_vaapi"]), &JobOptions::default(), false);
+        assert!(cmd.contains("-rc_mode QVBR") && !plan.notes.contains(&"ceilingUnsupported"), "{cmd}");
     }
 
     #[test]

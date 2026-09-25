@@ -40,6 +40,7 @@ export const X = make(() => <path d="M4 4l8 8M12 4l-8 8" />);
 export const Check = make(() => <path d="M3 8.5l3.25 3.25L13 5" />);
 export const ChevronDown = make(() => <path d="M4 6l4 4 4-4" />);
 export const ChevronRight = make(() => <path d="M6 4l4 4-4 4" />);
+export const PanelRight = make(() => <path d="M2.25 2.75h11.5v10.5H2.25zM10 2.75v10.5" />);
 export const ArrowRight = make(() => <path d="M2.75 8h10M9 4.25L12.75 8 9 11.75" />);
 export const ArrowLeft = make(() => <path d="M13.25 8h-10M7 4.25L3.25 8 7 11.75" />);
 export const Compass = make(() => <><circle cx="8" cy="8" r="6.25" /><path d="M10.5 5.5l-1.5 3.5-3.5 1.5 1.5-3.5z" /></>);

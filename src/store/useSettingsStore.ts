@@ -22,6 +22,8 @@ export interface Settings {
   lastUpdateCheck: number;
   showIntro: boolean;
   onboarded: boolean;
+  collapsedGroups: string[];
+  inspectorCollapsed: boolean;
 }
 
 export interface WatchFolder {
@@ -56,6 +58,8 @@ export const DEFAULT_SETTINGS: Settings = {
   lastUpdateCheck: 0,
   showIntro: true,
   onboarded: false,
+  collapsedGroups: [],
+  inspectorCollapsed: false,
 };
 
 function load(): Settings {

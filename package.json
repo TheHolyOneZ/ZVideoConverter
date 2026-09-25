@@ -1,7 +1,7 @@
 {
   "name": "zvideoconverter",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Free, open-source bulk video converter for Windows and Linux with NVIDIA, AMD and Intel GPU acceleration, editable profiles and file names that stay intact.",
   "keywords": [
     "video-converter",

@@ -1,5 +1,10 @@
 import { getLocale } from "./i18n";
 
+export function formatBitrate(bps: number | null | undefined): string {
+  if (bps == null || !isFinite(bps) || bps <= 0) return "–";
+  return bps >= 1_000_000 ? `${(bps / 1_000_000).toFixed(bps >= 10_000_000 ? 0 : 1)} Mb/s` : `${Math.round(bps / 1000)} kb/s`;
+}
+
 export function formatBytes(n: number | null | undefined): string {
   if (n == null || !isFinite(n)) return "–";
   const units = ["B", "KB", "MB", "GB", "TB"];

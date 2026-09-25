@@ -15,13 +15,14 @@
   <a href="https://zsync.eu/zvideoconverter/">Download</a> ·
   <a href="#features">Features</a> ·
   <a href="#faq">FAQ</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
   <a href="#building-from-source">Build</a> ·
   <a href="https://zsync.eu/">More projects</a>
 </p>
 
 <p align="center">
   <a href="https://www.gnu.org/licenses/gpl-3.0"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" /></a>
-  <img alt="Version 0.1.0" src="https://img.shields.io/badge/version-0.1.0-informational" />
+  <img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-informational" />
   <img alt="Platforms: Windows and Linux" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey" />
   <img alt="GPU: NVENC, AMF, VA-API, Quick Sync" src="https://img.shields.io/badge/GPU-NVENC%20%7C%20AMF%20%7C%20VA--API%20%7C%20QSV-orange" />
   <img alt="Built with Tauri and Rust" src="https://img.shields.io/badge/built%20with-Tauri%20%2B%20Rust-8a4a2b" />
@@ -84,10 +85,13 @@ It started with a request from a [ZRename](https://zsync.eu/zrename/) user. The 
 
 ### Working with the queue
 - A one-line summary before you start: *"5 files → MP4 · HEVC on the GPU (VA-API), saved next to the originals"*.
-- Live progress, fps, speed and time left per file, plus a timeline of the whole batch.
+- Each file shows its resolution, codec, **source bitrate**, audio and size, and an **estimated output size** (from the source's bitrate and the encoder that will run; the 10-second preview measures it exactly).
+- Live progress, fps, speed, time left and the **expected final size** per file, plus a timeline of the whole batch.
 - Pause (running encodes freeze on Linux; on Windows they finish first), cancel single files or everything, and add files to a run in progress.
 - Unfinished outputs are written to a temporary `.zvc-part` file, so a cancelled or failed conversion never leaves a broken video behind.
-- The exact ffmpeg command and log for every file, ready to copy.
+- The exact ffmpeg command for every file, ready to copy: under *ffmpeg command* at the bottom of the settings before converting, and with the log afterwards.
+- Profiles in use by a running conversion are locked until it finishes, so a run never changes under you.
+- Fold away what you don't need: profile groups collapse with a click, and the settings panel folds into a thin bar (it opens again when you edit a profile).
 
 ### Before and after converting
 - **10-second preview encode**: see the real quality and the measured file size before converting everything.
@@ -117,6 +121,17 @@ It started with a request from a [ZRename](https://zsync.eu/zrename/) user. The 
 Get it for **Windows** (installer) and **Linux** (`.deb`, `.rpm`, AppImage) at **[zsync.eu/zvideoconverter](https://zsync.eu/zvideoconverter/)** or from the [GitHub releases](https://github.com/TheHolyOneZ/ZVideoConverter/releases). Every release comes with a `SHA256SUMS` file to check your download.
 
 ffmpeg doesn't need to be installed: on first start the app offers a one-click download.
+
+## What's new in 0.2.0
+
+Fixes and features from the first real-world testing:
+
+- **Closing "Compare with original" no longer leaves a black window**, and a crash anywhere now shows a Reload button instead of a black screen.
+- **Constrained quality stays on the GPU**: every graphics card is tested for it at start-up, and where the driver can't cap the bitrate, the option is greyed out instead of silently falling back to the CPU.
+- **Much better size estimates**, based on the source's bitrate and the encoder that will really run, plus the **expected final size while converting**.
+- **Source bitrate** in the file list, **the exact ffmpeg command** in the settings, **collapsible profile groups and settings panel**, and profiles locked while conversions use them.
+
+All changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## How to use it
 
@@ -152,7 +167,7 @@ No. If none is found, ZVideoConverter offers a one-click download of a static GP
 | CPU (x264, x265) | ✓ | ✓ | ✓ | ✓ |
 | CPU (SVT-AV1) | ✓ | ✓, the ceiling is approximate | ✓ (low-delay mode) | ✓ |
 | NVIDIA NVENC | ✓ | ✓ | ✓ | ✓ |
-| VA-API (Linux) | ✓ | ✓, but the driver decides how strictly: AMD's Mesa driver treats the ceiling as a soft limit | ✓ | ✓ |
+| VA-API (Linux) | ✓ | Depends on the driver, which the app tests at start-up: without QVBR the switch is greyed out; AMD's Mesa driver treats the ceiling as a soft limit | ✓ | ✓ |
 | AMD AMF (Windows) | ✓ | CQ only, the ceiling is not applied (the log says so) | ✓ | ✓ |
 | Intel Quick Sync | ✓ | ✓ | ✓ | ✓ |
 

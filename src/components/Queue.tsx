@@ -33,7 +33,7 @@ import {
 import { useT } from "../lib/i18n";
 import { api, errorOf, type OriginalFate } from "../lib/tauri";
 import { toast } from "../store/useToastStore";
-import { codecLabel, dirName, FAMILY_LABELS, fileName, formatBytes, formatDuration, resolutionLabel, splitExt } from "../lib/format";
+import { codecLabel, dirName, FAMILY_LABELS, fileName, formatBitrate, formatBytes, formatDuration, resolutionLabel, splitExt } from "../lib/format";
 import { ACTIVE, FINAL, effectiveProfile, sizeEstimate, useQueueStore, type Job } from "../store/useQueueStore";
 import { profileName, useProfileStore } from "../store/useProfileStore";
 import { MenuButton, MenuList, Popover, type MenuEntry } from "./ui";
@@ -539,6 +539,11 @@ const QueueRow = memo(function QueueRow({
           <div className="flex flex-wrap items-center gap-1.5 min-w-0 h-[19px] overflow-hidden">
             {v && <span className="tag">{resolutionLabel(v.width, v.height)}{v.hdr ? " HDR" : ""}</span>}
             {v && <span className="tag">{codecLabel(v.codec)}</span>}
+            {v && (v.bitrate ?? m?.bitrate) ? (
+              <span className="tag tnum" title={t(v.bitrate ? "queue.bitrateVideo" : "queue.bitrateTotal")}>
+                {formatBitrate(v.bitrate ?? m?.bitrate)}
+              </span>
+            ) : null}
             {m && m.audio.length > 0 && (
               <span className="tag" title={m.audio.map((a) => `${codecLabel(a.codec)} ${a.channels}ch ${a.language ?? ""}`).join("\n")}>
                 {codecLabel(m.audio[0].codec)}
@@ -696,6 +701,12 @@ function StatusBody({ job }: { job: Job }) {
           </div>
           <div className="text-[10.5px] mono tnum h-3.5" style={{ color: "var(--text-3)" }}>
             {job.status === "running" && pr ? `${pr.speed.toFixed(2)}× · ${Math.round(pr.fps)} fps · ${formatBytes(pr.size)}` : ""}
+            {job.status === "running" && pr && projectedSize(job) != null && (
+              <span style={{ color: "var(--text-2)" }} title={t("queue.projectedHint")}>
+                {" "}
+                {t("queue.projected", { size: formatBytes(projectedSize(job)) })}
+              </span>
+            )}
             {job.fellBackReason && job.status === "running" && <span style={{ color: "var(--warn)" }}> · CPU</span>}
           </div>
         </>
@@ -774,6 +785,17 @@ function OriginalLine({ job, fate }: { job: Job; fate: OriginalFate }) {
       )}
     </span>
   );
+}
+
+function projectedSize(job: Job): number | null {
+  const pr = job.progress;
+  if (!pr || pr.percent < 5 || !pr.size) return null;
+  if (job.pass && job.pass.passes > 1 && job.pass.pass < job.pass.passes) return null;
+  const extrapolated = pr.size / (pr.percent / 100);
+  const estimate = sizeEstimate(job)?.bytes;
+  if (!estimate) return extrapolated;
+  const w = Math.min(1, pr.percent / 60);
+  return w * extrapolated + (1 - w) * estimate;
 }
 
 function EstimateText({ job }: { job: Job }) {

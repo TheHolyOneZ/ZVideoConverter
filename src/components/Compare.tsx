@@ -37,6 +37,8 @@ export function CompareView() {
   const t = useT();
   const { req, close } = useCompareStore();
   const [frames, setFrames] = useState<{ before: string; after: string } | null>(null);
+  const [shown, setShown] = useState<CompareRequest | null>(null);
+  if (req && req !== shown) setShown(req);
   const [split, setSplit] = useState(50);
   const box = useRef<HTMLDivElement>(null);
 
@@ -63,9 +65,9 @@ export function CompareView() {
   };
 
   return (
-    <Modal open={!!req} onClose={close} title={t("compare.title", { name: req?.title ?? "" })} width={1100}>
+    <Modal open={!!req} onClose={close} title={t("compare.title", { name: shown?.title ?? "" })} width={1100}>
       <div className="p-4">
-        {!frames ? (
+        {!frames || !shown ? (
           <div className="h-[420px] grid place-items-center" style={{ color: "var(--text-3)" }}>
             <Loader2 size={20} className="animate-spin" />
           </div>
@@ -102,7 +104,7 @@ export function CompareView() {
             </div>
             <div className="flex justify-between text-[11.5px] mt-2" style={{ color: "var(--text-3)" }}>
               <span>{t("compare.hint")}</span>
-              <span className="mono">{formatTimestamp(req!.sourceAt)}</span>
+              <span className="mono">{formatTimestamp(shown.sourceAt)}</span>
             </div>
           </>
         )}

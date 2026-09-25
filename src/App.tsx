@@ -52,6 +52,7 @@ function isTyping(e: KeyboardEvent) {
 }
 
 export default function App() {
+  const inspectorCollapsed = useSettingsStore((s) => s.inspectorCollapsed);
   const t = useT();
   const ffmpeg = useHwStore((s) => s.ffmpeg);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -143,7 +144,7 @@ export default function App() {
         style={{
           gap: 1,
           background: "var(--line)",
-          gridTemplateColumns: "clamp(250px, 18vw, 300px) minmax(0,1fr) clamp(320px, 25vw, 410px)",
+          gridTemplateColumns: `clamp(250px, 18vw, 300px) minmax(0,1fr) ${inspectorCollapsed ? "40px" : "clamp(320px, 25vw, 410px)"}`,
           gridTemplateRows: "minmax(0,1fr) auto",
         }}
       >

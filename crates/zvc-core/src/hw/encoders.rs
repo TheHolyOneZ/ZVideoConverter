@@ -359,6 +359,7 @@ mod tests {
                     codec: *c,
                     working: working.contains(n),
                     error: None,
+                    ceiling: *f != Family::Amf,
                 })
                 .collect(),
             cpu_encoders: cpu.iter().map(|s| s.to_string()).collect(),
